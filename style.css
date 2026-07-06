@@ -1,0 +1,305 @@
+:root {
+  /* 浅色清新背景调 */
+  --bg: #f4f5f9;            /* 极浅灰蓝 */
+  --bg-deep: #f7f9fc;       /* 整体主背景（微带一点蓝灰，比纯白更高级） */
+  --bg-panel: #ffffff;      /* 面板/卡片背景（纯白，做出层级感） */
+  --bg-card: #f1f3f7;       /* 按钮/次要元素背景 */
+  --bg-card-hover: #e8ecf3; /* 悬浮时的颜色 */
+  
+  /* 深色文字，确保可读性 */
+  --ink: #2c3345;           /* 主文字颜色（深蓝灰，比纯黑更柔和） */
+  --ink-dim: #606f8b;       /* 次要文字（描述、统计等） */
+  --ink-faint: #94a3b8;     /* 极淡文字/提示 */
+  
+  /* 点缀色微调，适应浅色背景 */
+  --gold: #b3861b;          /* 稍微加深的金色（浅底上太浅看不清） */
+  --gold-dim: #cca343;      /* 辅助金色 */
+  --teal: #2b8a82;          /* 加深的青色 */
+  --danger: #dc2626;        /* 警告红 */
+  --line: #e2e8f0;          /* 边框线（清爽的浅灰色） */
+  
+  --radius: 10px;
+  --serif: 'Noto Serif SC', serif;
+  --sans: 'Noto Sans SC', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+*{ box-sizing: border-box; }
+
+html, body{
+  margin:0;
+  padding:0;
+  background: var(--bg-deep);
+  color: var(--ink);
+  font-family: var(--sans);
+  min-height: 100%;
+}
+
+body{
+  /* 换成两团淡淡的柔和光晕（左上角微米黄，右上角微淡蓝） */
+  background-image:
+    radial-gradient(circle at 15% 0%, #fef3c7 0%, transparent 50%),
+    radial-gradient(circle at 90% 10%, #dbeafe 0%, transparent 40%);
+  background-attachment: fixed;
+}
+
+#app{
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 22px 80px;
+  animation: fadein .35s ease;
+}
+
+@keyframes fadein{
+  from{ opacity:0; transform: translateY(6px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+.loading, .error{
+  text-align:center;
+  padding: 80px 20px;
+  color: var(--ink-dim);
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  letter-spacing: .02em;
+}
+.error{ color: var(--danger); }
+
+/* ---------- topbar ---------- */
+.topbar{
+  display:flex;
+  align-items:center;
+  gap: 16px;
+  padding-bottom: 22px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--line);
+}
+.topbar h1{
+  flex:1;
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 1.5rem;
+  letter-spacing: .03em;
+  margin: 0;
+  color: var(--ink);
+  overflow:hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar h1::before{
+  content: '';
+}
+
+.btn{
+  font-family: var(--sans);
+  font-size: .85rem;
+  color: var(--ink);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  padding: 9px 16px;
+  border-radius: 999px;
+  cursor:pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.btn:hover{ background: var(--bg-card-hover); border-color: var(--gold-dim); color: var(--gold); }
+.btn.primary{
+  background: var(--gold);
+  color: #201a08;
+  border-color: var(--gold);
+  font-weight: 700;
+}
+.btn.primary:hover{ background: #e6bc5c; color:#201a08; }
+.btn.active{
+  background: var(--danger);
+  border-color: var(--danger);
+  color:#2a0d10;
+  font-weight:700;
+}
+.btn-icon{
+  font-family: var(--sans);
+  font-size: .85rem;
+  color: var(--ink-dim);
+  background: none;
+  border: none;
+  cursor:pointer;
+  padding: 6px 4px;
+  transition: color .15s ease;
+}
+.btn-icon:hover{ color: var(--gold); }
+
+/* ---------- home grid : book spines ---------- */
+.grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px;
+}
+
+.user-card{
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 14px 16px;
+  text-align:center;
+  cursor:pointer;
+  transition: transform .15s ease, background .15s ease, border-color .15s ease;
+  position:relative;
+}
+.user-card::before{
+  content:'';
+  position:absolute;
+  top:0; left:14%;
+  width:72%;
+  height:3px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+  opacity:.6;
+}
+.user-card:hover{
+  transform: translateY(-3px);
+  background: var(--bg-card-hover);
+  border-color: var(--gold-dim);
+}
+
+.avatar{
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin: 0 auto 12px;
+  border: 2px solid rgba(234,230,218,.18);
+  box-shadow: 0 0 0 4px rgba(0,0,0,.15), inset 0 0 12px rgba(0,0,0,.25);
+}
+
+.user-name{
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: .95rem;
+  color: var(--ink);
+  overflow:hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+.user-count{
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--gold-dim);
+  margin-top: 4px;
+  letter-spacing: .04em;
+}
+
+/* ---------- delete-mode confirm bar ---------- */
+.confirm-bar{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  margin-bottom: 18px;
+  position: sticky;
+  top: 12px;
+  z-index: 5;
+}
+.confirm-bar.hidden{ display:none; }
+#selectedCount{ font-family: var(--mono); font-size: .82rem; color: var(--ink-dim); }
+
+/* ---------- user page: novel list ---------- */
+.novel-list{
+  display:flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.novel-item{
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold-dim);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.novel-item:hover{ background: var(--bg-card); }
+
+.novel-header{
+  display:flex;
+  align-items:baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.novel-checkbox{
+  accent-color: var(--danger);
+  width: 16px;
+  height: 16px;
+  cursor:pointer;
+  flex-shrink:0;
+}
+.mark-x{
+  color: var(--danger);
+  font-weight: 700;
+  font-family: var(--mono);
+  flex-shrink:0;
+}
+.novel-title{
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  cursor:pointer;
+  transition: color .15s ease;
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+.novel-title:hover{ color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.novel-charcount{
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--teal);
+  white-space: nowrap;
+}
+.novel-desc{
+  color: var(--ink-dim);
+  font-size: .88rem;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+.novel-tags{
+  margin-top: 10px;
+  display:flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag{
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 8px;
+  letter-spacing: .02em;
+}
+
+/* ---------- novel content page ---------- */
+.novel-content{
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 2;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 30px clamp(16px, 5vw, 56px);
+}
+.novel-content.mobile-mode{
+  font-size: 1.35rem;
+  line-height: 2.15;
+}
+
+@media (max-width: 600px){
+  .topbar h1{ font-size: 1.15rem; }
+  .grid{ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+  .novel-content{ padding: 22px 16px; }
+}
