@@ -252,20 +252,25 @@ async function renderUserPage(userId){
 function renderNovelList(){
   const list = document.getElementById('novelList');
   if(!list) return;
+  list.classList.toggle('delete-mode', state.deleteMode);
   list.innerHTML = state.currentNovels.map(novelItemHTML).join('');
 
   list.querySelectorAll('.novel-title').forEach(el => {
     el.addEventListener('click', () => {
+      if(state.deleteMode) return; // clicks are handled by the whole-card toggle below
       state.highlightNovelId = el.dataset.id;
       go(`#/novel/${encodeURIComponent(el.dataset.id)}/${encodeURIComponent(state.currentUserId)}`);
     });
   });
 
   if(state.deleteMode){
-    list.querySelectorAll('.novel-checkbox').forEach(cb => {
-      cb.addEventListener('change', e => {
-        const id = e.target.dataset.id;
-        if(e.target.checked) state.pendingSelection.add(id);
+    list.querySelectorAll('.novel-item').forEach(item => {
+      item.addEventListener('click', e => {
+        const cb = item.querySelector('.novel-checkbox');
+        if(!cb) return;
+        if(e.target !== cb) cb.checked = !cb.checked;
+        const id = cb.dataset.id;
+        if(cb.checked) state.pendingSelection.add(id);
         else state.pendingSelection.delete(id);
         updateSelectedCount();
       });

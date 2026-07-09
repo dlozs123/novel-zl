@@ -214,6 +214,8 @@ body{
   transition: background .15s ease, border-color .15s ease;
 }
 .novel-item:hover{ background: var(--bg-card); }
+.novel-list.delete-mode .novel-item{ cursor: pointer; }
+.novel-list.delete-mode .novel-title{ cursor: pointer; }
 
 .novel-header{
   display:flex;
