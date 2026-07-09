@@ -20,6 +20,7 @@ const state = {
   currentNovels: [],
   deleteMode: false,
   pendingSelection: new Set(),
+  highlightNovelId: null,  // set right before leaving to a novel page, consumed once back on the user page
 };
 
 /* ---------------- bootstrap ---------------- */
@@ -255,6 +256,7 @@ function renderNovelList(){
 
   list.querySelectorAll('.novel-title').forEach(el => {
     el.addEventListener('click', () => {
+      state.highlightNovelId = el.dataset.id;
       go(`#/novel/${encodeURIComponent(el.dataset.id)}/${encodeURIComponent(state.currentUserId)}`);
     });
   });
@@ -269,6 +271,25 @@ function renderNovelList(){
       });
     });
   }
+
+  if(state.highlightNovelId){
+    const targetId = state.highlightNovelId;
+    state.highlightNovelId = null;
+    const target = list.querySelector(`.novel-item[data-novel-id="${CSS.escape(targetId)}"]`);
+    if(target){
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ block: 'center' });
+        target.classList.add('highlight');
+        setTimeout(() => target.classList.remove('highlight'), 5000);
+      });
+    }
+  }
+}
+
+// Strip HTML-tag-like fragments (e.g. literal "<br />" in description text).
+// No line-break substitution needed — just drop the tags.
+function stripTags(str){
+  return String(str).replace(/<[^>]*>/g, '');
 }
 
 function novelItemHTML(n){
@@ -277,23 +298,20 @@ function novelItemHTML(n){
   const checked = state.pendingSelection.has(id);
   const tags = Array.isArray(n.tags) ? n.tags : [];
   const tagsHtml = tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
-  
-  // 1. 获取原始的 description
-  let desc = n.description || (n.novelMeta && n.novelMeta.description) || '';
-  
-  // 2. 使用正则匹配各种格式的 <br> 标签（如 <br>, <br/>, <br />, <BR> 等），替换为空格或直接去掉
-  // 这里选择替换为空格 ' '，防止两句话连在一起；如果你想完全去掉不留空格，可以改成 ''
-  desc = desc.replace(/<br\s*\/?>/gi, ' '); 
-
+  const rawDesc = n.description || (n.novelMeta && n.novelMeta.description) || '';
+  const desc = stripTags(rawDesc);
   const charCount = (n.novelMeta && n.novelMeta.charCount) || n.charCount || 0;
 
   const checkboxHtml = state.deleteMode
     ? `<input type="checkbox" class="novel-checkbox" data-id="${escapeHtml(id)}" ${checked ? 'checked' : ''}>`
     : '';
   const markHtml = (!state.deleteMode && marked) ? `<span class="mark-x">✗</span>` : '';
+  const seriesHtml = (n.seriesTitle && n.seriesOrder !== null && n.seriesOrder !== undefined)
+    ? `<div class="novel-series">${escapeHtml(n.seriesTitle)} 系列作品的第 ${escapeHtml(String(n.seriesOrder))} 篇</div>`
+    : '';
 
   return `
-    <div class="novel-item">
+    <div class="novel-item" data-novel-id="${escapeHtml(id)}">
       <div class="novel-header">
         ${checkboxHtml}
         ${markHtml}
@@ -301,6 +319,7 @@ function novelItemHTML(n){
         <span class="novel-charcount">${charCount} 字</span>
       </div>
       ${desc ? `<div class="novel-desc">${escapeHtml(desc)}</div>` : ''}
+      ${seriesHtml}
       ${tagsHtml ? `<div class="novel-tags">${tagsHtml}</div>` : ''}
     </div>`;
 }
@@ -411,6 +430,13 @@ async function renderNovelPage(novelId, userId){
 
   const processed = processNovelText(raw);
 
+  let seriesList = [];
+  if(meta && meta.seriesTitle){
+    seriesList = state.currentNovels
+      .filter(n => n.seriesTitle === meta.seriesTitle)
+      .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+  }
+
   app.innerHTML = `
     <header class="topbar">
       <button id="backBtn" class="btn-icon">← 返回</button>
@@ -418,6 +444,7 @@ async function renderNovelPage(novelId, userId){
       <button id="mobileBtn" class="btn">手机模式</button>
     </header>
     <div class="novel-content" id="novelContent">${escapeHtml(processed)}</div>
+    ${seriesList.length ? seriesDirectoryHTML(meta, seriesList) : ''}
   `;
 
   document.getElementById('backBtn').onclick = () => history.back();
@@ -426,6 +453,38 @@ async function renderNovelPage(novelId, userId){
     const active = content.classList.toggle('mobile-mode');
     document.getElementById('mobileBtn').textContent = active ? '还原字号' : '手机模式';
   };
+
+  if(seriesList.length){
+    setupSeriesDirectory(novelId, userId);
+  }
+}
+
+function seriesDirectoryHTML(meta, seriesList){
+  const items = seriesList.map(n => `
+    <div class="series-panel-item ${String(n.id) === String(meta.id) ? 'current' : ''}" data-id="${escapeHtml(String(n.id))}">
+      <span class="series-panel-order">第${escapeHtml(String(n.seriesOrder))}篇</span>
+      <span>${escapeHtml(n.title || '（无标题）')}</span>
+    </div>`).join('');
+
+  return `
+    <button id="seriesFab" class="fab">系列目录</button>
+    <div id="seriesPanel" class="series-panel hidden">
+      <div class="series-panel-header">${escapeHtml(meta.seriesTitle)}</div>
+      <div class="series-panel-list">${items}</div>
+    </div>`;
+}
+
+function setupSeriesDirectory(novelId, userId){
+  const fab = document.getElementById('seriesFab');
+  const panel = document.getElementById('seriesPanel');
+  fab.addEventListener('click', () => panel.classList.toggle('hidden'));
+  panel.querySelectorAll('.series-panel-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const targetId = item.dataset.id;
+      if(String(targetId) === String(novelId)) { panel.classList.add('hidden'); return; }
+      go(`#/novel/${encodeURIComponent(targetId)}/${encodeURIComponent(userId)}`);
+    });
+  });
 }
 
 /* ---------------- utils ---------------- */
