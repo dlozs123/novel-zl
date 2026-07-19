@@ -499,7 +499,13 @@ async function loadNovelText(novelId){
 function processNovelText(raw){
   const idx = raw.indexOf(SPLIT_MARKER);
   let text = idx >= 0 ? raw.slice(idx + SPLIT_MARKER.length) : raw;
-  let lines = text.split(/\r?\n/).filter(l => l.trim() !== '[newpage]');
+  
+  // 修改这里：全局替换掉所有的 [newpage]，然后再过滤掉可能产生的空行
+  let lines = text.split(/\r?\n/)
+    .map(l => l.replace(/\[newpage\]/g, ''))
+    // 如果不需要保留因为删掉标签而变成纯空格的行，可以加上下面这句过滤：
+    // .filter(l => l.trim() !== ''); 
+  
   while(lines.length && lines[0].trim() === '') lines.shift();
   while(lines.length && lines[lines.length - 1].trim() === '') lines.pop();
   return lines.join('\n');
