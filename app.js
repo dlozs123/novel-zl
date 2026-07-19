@@ -11,6 +11,8 @@ const DATA_BASE = 'https://v1.dlozs.top/data';
 const NOVEL_BASE = 'https://v1.dlozs.top/novels';
 const SPLIT_MARKER = '----- 下面是正文 -----';
 
+let fabHideTimeout = null;
+
 const state = {
   users: [],
   config: null,
@@ -44,7 +46,20 @@ async function init(){
   await refreshMarkedIds();
   await refreshMarkedUserIds();
   subscribeRealtime();
+  
   route();
+}
+
+function startFabHideTimer() {
+  const fab = document.getElementById('seriesFab');
+  if (fab) {
+    clearTimeout(fabHideTimeout);
+    fabHideTimeout = setTimeout(() => {
+      if (!fab.matches(':hover')) {
+        fab.classList.add('hide-side');
+      }
+    }, 2000);
+  }
 }
 
 async function loadConfig(){
@@ -308,7 +323,7 @@ async function renderUserPage(userId){
     <div class="novel-list" id="novelList"></div>
   `;
 
-  document.getElementById('backBtn').onclick = () => history.back();
+  document.getElementById('backBtn').onclick = () => go('#/');
   document.getElementById('hideDeletedBtn').onclick = () => {
     state.hideDeleted = !state.hideDeleted;
     document.getElementById('hideDeletedBtn').textContent = state.hideDeleted ? '显示已删除' : '隐藏已删除';
@@ -512,12 +527,10 @@ async function renderNovelPage(novelId, userId){
 
   const processed = processNovelText(raw);
 
-  let seriesList = [];
-  if(meta && meta.seriesTitle){
-    seriesList = state.currentNovels
-      .filter(n => n.seriesTitle === meta.seriesTitle)
-      .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
-  }
+  const allNovels = state.currentNovels || [];
+  const inSeries = meta && meta.seriesTitle;
+
+  state.highlightNovelId = String(novelId);
 
   app.innerHTML = `
     <header class="topbar">
@@ -526,46 +539,92 @@ async function renderNovelPage(novelId, userId){
       <button id="mobileBtn" class="btn">手机模式</button>
     </header>
     <div class="novel-content" id="novelContent">${escapeHtml(processed)}</div>
-    ${seriesList.length ? seriesDirectoryHTML(meta, seriesList) : ''}
+    ${allNovels.length ? novelDirectoryHTML(meta, inSeries) : ''}
   `;
 
-  document.getElementById('backBtn').onclick = () => history.back();
+  document.getElementById('backBtn').onclick = () => go(`#/user/${encodeURIComponent(userId)}`);
   document.getElementById('mobileBtn').onclick = () => {
     const content = document.getElementById('novelContent');
     const active = content.classList.toggle('mobile-mode');
     document.getElementById('mobileBtn').textContent = active ? '还原字号' : '手机模式';
   };
 
-  if(seriesList.length){
-    setupSeriesDirectory(novelId, userId);
+  if(allNovels.length){
+    setupNovelDirectory(novelId, userId, inSeries, meta, allNovels);
   }
+  
+  startFabHideTimer();
 }
 
-function seriesDirectoryHTML(meta, seriesList){
-  const items = seriesList.map(n => `
-    <div class="series-panel-item ${String(n.id) === String(meta.id) ? 'current' : ''}" data-id="${escapeHtml(String(n.id))}">
-      <span class="series-panel-order">第${escapeHtml(String(n.seriesOrder))}篇</span>
-      <span>${escapeHtml(n.title || '（无标题）')}</span>
-    </div>`).join('');
-
+function novelDirectoryHTML(meta, inSeries){
   return `
-    <button id="seriesFab" class="fab">系列目录</button>
+    <button id="seriesFab" class="fab">作品目录</button>
     <div id="seriesPanel" class="series-panel hidden">
-      <div class="series-panel-header">${escapeHtml(meta.seriesTitle)}</div>
-      <div class="series-panel-list">${items}</div>
+      <div class="series-panel-header" style="display:flex; justify-content:space-between; align-items:center; padding: 8px 16px;">
+        <span>作品目录</span>
+        <button id="toggleSeriesBtn" class="btn" style="padding: 4px 10px; font-size: 0.75rem;" ${inSeries ? '' : 'disabled'}>只看系列</button>
+      </div>
+      <div class="series-panel-list" id="directoryList"></div>
     </div>`;
 }
 
-function setupSeriesDirectory(novelId, userId){
+function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
   const fab = document.getElementById('seriesFab');
   const panel = document.getElementById('seriesPanel');
-  fab.addEventListener('click', () => panel.classList.toggle('hidden'));
-  panel.querySelectorAll('.series-panel-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const targetId = item.dataset.id;
-      if(String(targetId) === String(novelId)) { panel.classList.add('hidden'); return; }
-      go(`#/novel/${encodeURIComponent(targetId)}/${encodeURIComponent(userId)}`);
+  const listContainer = document.getElementById('directoryList');
+  const toggleBtn = document.getElementById('toggleSeriesBtn');
+  
+  let showOnlySeries = false;
+
+  function renderList() {
+    let list = allNovels;
+    if (showOnlySeries && inSeries && meta) {
+      list = allNovels
+        .filter(n => n.seriesTitle === meta.seriesTitle)
+        .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+    }
+    
+    listContainer.innerHTML = list.map(n => {
+      const isCurrent = String(n.id) === String(novelId);
+      const prefix = (showOnlySeries && inSeries && n.seriesOrder !== null && n.seriesOrder !== undefined) 
+        ? `<span class="series-panel-order">第${escapeHtml(String(n.seriesOrder))}篇</span>`
+        : '';
+      return `
+        <div class="series-panel-item ${isCurrent ? 'current' : ''}" data-id="${escapeHtml(String(n.id))}">
+          ${prefix}
+          <span>${escapeHtml(n.title || '（无标题）')}</span>
+        </div>`;
+    }).join('');
+    
+    listContainer.querySelectorAll('.series-panel-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const targetId = item.dataset.id;
+        if(String(targetId) === String(novelId)) { panel.classList.add('hidden'); return; }
+        go(`#/novel/${encodeURIComponent(targetId)}/${encodeURIComponent(userId)}`);
+      });
     });
+  }
+
+  renderList();
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      if(!inSeries) return;
+      showOnlySeries = !showOnlySeries;
+      toggleBtn.classList.toggle('primary', showOnlySeries);
+      renderList();
+    });
+  }
+
+  fab.addEventListener('click', () => panel.classList.toggle('hidden'));
+  
+  fab.addEventListener('mouseenter', () => {
+    fab.classList.remove('hide-side');
+    clearTimeout(fabHideTimeout);
+  });
+  
+  fab.addEventListener('mouseleave', () => {
+    startFabHideTimer();
   });
 }
 
