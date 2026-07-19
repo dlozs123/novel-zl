@@ -21,6 +21,7 @@ const state = {
   currentUserId: null,
   currentNovels: [],
   deleteMode: false,
+  hideDeleted: false,
   pendingSelection: new Set(),
   highlightNovelId: null,  // set right before leaving to a novel page, consumed once back on the user page
 };
@@ -297,6 +298,7 @@ async function renderUserPage(userId){
     <header class="topbar">
       <button id="backBtn" class="btn-icon">← 返回</button>
       <h1>${escapeHtml(userName)}</h1>
+      <button id="hideDeletedBtn" class="btn">${state.hideDeleted ? '显示已删除' : '隐藏已删除'}</button>
       <button id="deleteModeBtn" class="btn">删除模式</button>
     </header>
     <div class="confirm-bar hidden" id="confirmBar">
@@ -307,6 +309,11 @@ async function renderUserPage(userId){
   `;
 
   document.getElementById('backBtn').onclick = () => history.back();
+  document.getElementById('hideDeletedBtn').onclick = () => {
+    state.hideDeleted = !state.hideDeleted;
+    document.getElementById('hideDeletedBtn').textContent = state.hideDeleted ? '显示已删除' : '隐藏已删除';
+    renderNovelList();
+  };
   document.getElementById('deleteModeBtn').onclick = toggleDeleteMode;
   document.getElementById('confirmBtn').onclick = confirmDeleteSelection;
 
@@ -317,7 +324,13 @@ function renderNovelList(){
   const list = document.getElementById('novelList');
   if(!list) return;
   list.classList.toggle('delete-mode', state.deleteMode);
-  list.innerHTML = state.currentNovels.map(novelItemHTML).join('');
+  
+  let novelsToRender = state.currentNovels;
+  if (state.hideDeleted) {
+    novelsToRender = novelsToRender.filter(n => !state.markedIds.has(String(n.id)));
+  }
+  
+  list.innerHTML = novelsToRender.map(novelItemHTML).join('');
 
   list.querySelectorAll('.novel-title').forEach(el => {
     el.addEventListener('click', () => {
