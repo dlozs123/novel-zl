@@ -16,6 +16,8 @@ const state = {
   config: null,
   sb: null,               // supabase client
   markedIds: new Set(),   // novel ids (string) marked for deletion, synced with supabase
+  markedUserIds: new Set(), // user ids (string) marked as read
+  userMarkMode: false,      // toggles whether clicking user card marks them
   currentUserId: null,
   currentNovels: [],
   deleteMode: false,
@@ -39,6 +41,7 @@ async function init(){
     return;
   }
   await refreshMarkedIds();
+  await refreshMarkedUserIds();
   subscribeRealtime();
   route();
 }
@@ -83,6 +86,18 @@ async function refreshMarkedIds(){
   }
 }
 
+async function refreshMarkedUserIds(){
+  state.markedUserIds = new Set();
+  if(!state.sb) return;
+  try{
+    const { data, error } = await state.sb.from('marked_users').select('user_id');
+    if(error) throw error;
+    (data || []).forEach(r => state.markedUserIds.add(String(r.user_id)));
+  }catch(e){
+    console.error('加载标记作者失败', e);
+  }
+}
+
 function subscribeRealtime(){
   if(!state.sb) return;
   state.sb.channel('deleted_novels_changes')
@@ -95,6 +110,20 @@ function subscribeRealtime(){
       const parts = parseHash();
       if(parts[0] === 'user' && !state.deleteMode){
         renderNovelList();
+      }
+    })
+    .subscribe();
+
+  state.sb.channel('marked_users_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'marked_users' }, payload => {
+      if(payload.eventType === 'INSERT' && payload.new){
+        state.markedUserIds.add(String(payload.new.user_id));
+      } else if(payload.eventType === 'DELETE' && payload.old){
+        state.markedUserIds.delete(String(payload.old.user_id));
+      }
+      const parts = parseHash();
+      if(!parts[0] || parts[0] === ''){
+        renderHome();
       }
     })
     .subscribe();
@@ -135,21 +164,56 @@ function renderHome(){
       <button id="exportBtn" class="btn">导出删除列表</button>
     </header>
     <div class="grid" id="userGrid"></div>
+    <button id="userMarkFab" class="fab right" style="bottom: 20px;">${state.userMarkMode ? '退出标记' : '标记模式'}</button>
   `;
 
   const grid = document.getElementById('userGrid');
   grid.innerHTML = sorted.map(userCardHTML).join('');
   grid.querySelectorAll('.user-card').forEach(card => {
-    card.addEventListener('click', () => go(`#/user/${encodeURIComponent(card.dataset.userid)}`));
+    card.addEventListener('click', async () => {
+      const uId = card.dataset.userid;
+      if (state.userMarkMode) {
+        if (!state.sb) {
+          alert('尚未配置 Supabase，无法保存。');
+          return;
+        }
+        const isMarked = state.markedUserIds.has(uId);
+        if (isMarked) {
+          state.markedUserIds.delete(uId);
+          renderHome();
+          const { error } = await state.sb.from('marked_users').delete().eq('user_id', uId);
+          if (error) { state.markedUserIds.add(uId); renderHome(); }
+        } else {
+          state.markedUserIds.add(uId);
+          renderHome();
+          const { error } = await state.sb.from('marked_users').insert([{ user_id: uId }]);
+          if (error) { state.markedUserIds.delete(uId); renderHome(); }
+        }
+      } else {
+        go(`#/user/${encodeURIComponent(uId)}`);
+      }
+    });
   });
 
   document.getElementById('exportBtn').addEventListener('click', exportDeletedList);
+  
+  const fab = document.getElementById('userMarkFab');
+  if (fab) {
+    fab.addEventListener('click', () => {
+      state.userMarkMode = !state.userMarkMode;
+      renderHome();
+    });
+  }
 }
 
 function userCardHTML(u){
   const { c1, c2 } = colorFromString(String(u.userId));
+  const isMarked = state.markedUserIds.has(String(u.userId));
+  const markHtml = isMarked ? `<div class="user-mark-circle"></div>` : '';
+  
   return `
     <div class="user-card" data-userid="${escapeHtml(String(u.userId))}">
+      ${markHtml}
       <div class="avatar" style="background:linear-gradient(135deg, ${c1}, ${c2})"></div>
       <div class="user-name">${escapeHtml(u.user)}</div>
       <div class="user-count">${u.count} 篇</div>

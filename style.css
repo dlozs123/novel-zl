@@ -180,6 +180,19 @@ body{
   letter-spacing: .04em;
 }
 
+.user-mark-circle{
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 18px;
+  height: 18px;
+  background: var(--danger);
+  border-radius: 50%;
+  border: 2px solid var(--bg-panel);
+  z-index: 2;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
 /* ---------- delete-mode confirm bar ---------- */
 .confirm-bar{
   display:flex;
@@ -327,6 +340,11 @@ body{
   transition: transform .15s ease, background .15s ease;
 }
 .fab:hover{ transform: translateY(-2px); background: #96692f; }
+
+.fab.right {
+  left: auto;
+  right: 20px;
+}
 
 .series-panel{
   position: fixed;
