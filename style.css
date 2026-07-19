@@ -337,9 +337,14 @@ body{
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(44,38,32,.22);
-  transition: transform .15s ease, background .15s ease;
+  transition: transform .3s ease, background .15s ease, opacity .3s ease;
 }
-.fab:hover{ transform: translateY(-2px); background: #96692f; }
+.fab:hover{ transform: translateY(-2px); background: #96692f; opacity: 1; }
+
+.fab.hide-side {
+  transform: translateX(-100%);
+  opacity: 0.5;
+}
 
 .fab.right {
   left: auto;
