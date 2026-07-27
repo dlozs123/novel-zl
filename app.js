@@ -26,6 +26,9 @@ const state = {
   hideDeleted: false,
   pendingSelection: new Set(),
   highlightNovelId: null,  // set right before leaving to a novel page, consumed once back on the user page
+  translationCache: {},
+  showTranslation: false,
+  translationController: null,
 };
 
 /* ---------------- bootstrap ---------------- */
@@ -33,12 +36,12 @@ const state = {
 document.addEventListener('DOMContentLoaded', init);
 window.addEventListener('hashchange', route);
 
-async function init(){
+async function init() {
   await loadConfig();
   initSupabase();
-  try{
+  try {
     await loadUsers();
-  }catch(e){
+  } catch (e) {
     document.getElementById('app').innerHTML =
       `<div class="error">users.json 加载失败：${escapeHtml(e.message)}<br>请确认 users.json 与 index.html 放在同一目录。</div>`;
     return;
@@ -46,7 +49,7 @@ async function init(){
   await refreshMarkedIds();
   await refreshMarkedUserIds();
   subscribeRealtime();
-  
+
   route();
 }
 
@@ -62,20 +65,20 @@ function startFabHideTimer() {
   }
 }
 
-async function loadConfig(){
-  try{
+async function loadConfig() {
+  try {
     const res = await fetch('./config.json', { cache: 'no-store' });
-    if(res.ok) state.config = await res.json();
-  }catch(e){
+    if (res.ok) state.config = await res.json();
+  } catch (e) {
     state.config = null;
   }
 }
 
-function initSupabase(){
-  if(state.config && state.config.SUPABASE_URL && state.config.SUPABASE_KEY && window.supabase){
-    try{
+function initSupabase() {
+  if (state.config && state.config.SUPABASE_URL && state.config.SUPABASE_KEY && window.supabase) {
+    try {
       state.sb = window.supabase.createClient(state.config.SUPABASE_URL, state.config.SUPABASE_KEY);
-    }catch(e){
+    } catch (e) {
       console.error('Supabase 初始化失败', e);
       state.sb = null;
     }
@@ -84,47 +87,47 @@ function initSupabase(){
   }
 }
 
-async function loadUsers(){
+async function loadUsers() {
   const res = await fetch('./users.json', { cache: 'no-store' });
-  if(!res.ok) throw new Error('HTTP ' + res.status);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   state.users = await res.json();
 }
 
-async function refreshMarkedIds(){
+async function refreshMarkedIds() {
   state.markedIds = new Set();
-  if(!state.sb) return;
-  try{
+  if (!state.sb) return;
+  try {
     const { data, error } = await state.sb.from('deleted_novels').select('novel_id');
-    if(error) throw error;
+    if (error) throw error;
     (data || []).forEach(r => state.markedIds.add(String(r.novel_id)));
-  }catch(e){
+  } catch (e) {
     console.error('加载删除标记失败', e);
   }
 }
 
-async function refreshMarkedUserIds(){
+async function refreshMarkedUserIds() {
   state.markedUserIds = new Set();
-  if(!state.sb) return;
-  try{
+  if (!state.sb) return;
+  try {
     const { data, error } = await state.sb.from('marked_users').select('user_id');
-    if(error) throw error;
+    if (error) throw error;
     (data || []).forEach(r => state.markedUserIds.add(String(r.user_id)));
-  }catch(e){
+  } catch (e) {
     console.error('加载标记作者失败', e);
   }
 }
 
-function subscribeRealtime(){
-  if(!state.sb) return;
+function subscribeRealtime() {
+  if (!state.sb) return;
   state.sb.channel('deleted_novels_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'deleted_novels' }, payload => {
-      if(payload.eventType === 'INSERT' && payload.new){
+      if (payload.eventType === 'INSERT' && payload.new) {
         state.markedIds.add(String(payload.new.novel_id));
-      } else if(payload.eventType === 'DELETE' && payload.old){
+      } else if (payload.eventType === 'DELETE' && payload.old) {
         state.markedIds.delete(String(payload.old.novel_id));
       }
       const parts = parseHash();
-      if(parts[0] === 'user' && !state.deleteMode){
+      if (parts[0] === 'user' && !state.deleteMode) {
         renderNovelList();
       }
     })
@@ -132,13 +135,13 @@ function subscribeRealtime(){
 
   state.sb.channel('marked_users_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'marked_users' }, payload => {
-      if(payload.eventType === 'INSERT' && payload.new){
+      if (payload.eventType === 'INSERT' && payload.new) {
         state.markedUserIds.add(String(payload.new.user_id));
-      } else if(payload.eventType === 'DELETE' && payload.old){
+      } else if (payload.eventType === 'DELETE' && payload.old) {
         state.markedUserIds.delete(String(payload.old.user_id));
       }
       const parts = parseHash();
-      if(!parts[0] || parts[0] === ''){
+      if (!parts[0] || parts[0] === '') {
         renderHome();
       }
     })
@@ -147,20 +150,20 @@ function subscribeRealtime(){
 
 /* ---------------- routing ---------------- */
 
-function parseHash(){
+function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
   return raw.split('/').filter(Boolean).map(decodeURIComponent);
 }
 
-function go(hash){
+function go(hash) {
   location.hash = hash;
 }
 
-function route(){
+function route() {
   const parts = parseHash();
-  if(parts[0] === 'user' && parts[1]){
+  if (parts[0] === 'user' && parts[1]) {
     renderUserPage(parts[1]);
-  } else if(parts[0] === 'novel' && parts[1]){
+  } else if (parts[0] === 'novel' && parts[1]) {
     renderNovelPage(parts[1], parts[2] || null);
   } else {
     renderHome();
@@ -170,7 +173,7 @@ function route(){
 
 /* ---------------- home page ---------------- */
 
-function renderHome(){
+function renderHome() {
   const app = document.getElementById('app');
   const sorted = [...state.users].sort((a, b) => (b.count || 0) - (a.count || 0));
 
@@ -212,7 +215,7 @@ function renderHome(){
   });
 
   document.getElementById('exportBtn').addEventListener('click', exportDeletedList);
-  
+
   const fab = document.getElementById('userMarkFab');
   if (fab) {
     fab.addEventListener('click', () => {
@@ -222,11 +225,11 @@ function renderHome(){
   }
 }
 
-function userCardHTML(u){
+function userCardHTML(u) {
   const { c1, c2 } = colorFromString(String(u.userId));
   const isMarked = state.markedUserIds.has(String(u.userId));
   const markHtml = isMarked ? `<div class="user-mark-circle"></div>` : '';
-  
+
   return `
     <div class="user-card" data-userid="${escapeHtml(String(u.userId))}">
       ${markHtml}
@@ -236,34 +239,34 @@ function userCardHTML(u){
     </div>`;
 }
 
-function hashStr(s){
+function hashStr(s) {
   let h = 0;
-  for(let i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; }
+  for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; }
   return h;
 }
 
-function colorFromString(s){
+function colorFromString(s) {
   const h = hashStr(s);
   const hue1 = h % 360;
   const hue2 = (hue1 + 50 + (h >> 8) % 80) % 360;
   return { c1: `hsl(${hue1}, 62%, 52%)`, c2: `hsl(${hue2}, 68%, 32%)` };
 }
 
-async function exportDeletedList(){
+async function exportDeletedList() {
   let ids;
-  if(state.sb){
-    try{
+  if (state.sb) {
+    try {
       const { data, error } = await state.sb.from('deleted_novels').select('novel_id');
-      if(error) throw error;
+      if (error) throw error;
       ids = (data || []).map(r => String(r.novel_id));
-    }catch(e){
+    } catch (e) {
       alert('导出失败：' + e.message);
       return;
     }
   } else {
     ids = [...state.markedIds];
   }
-  if(!ids.length){
+  if (!ids.length) {
     alert('当前没有被标记删除的作品。');
     return;
   }
@@ -280,20 +283,20 @@ async function exportDeletedList(){
 
 /* ---------------- user page ---------------- */
 
-async function loadUserNovels(userId){
+async function loadUserNovels(userId) {
   const res = await fetch(`${DATA_BASE}/${encodeURIComponent(userId)}.json`);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
 
-async function renderUserPage(userId){
+async function renderUserPage(userId) {
   const app = document.getElementById('app');
   app.innerHTML = `<div class="loading">正在翻阅书架…</div>`;
 
   let novels;
-  try{
+  try {
     novels = await loadUserNovels(userId);
-  }catch(e){
+  } catch (e) {
     app.innerHTML = `
       <div class="error">用户作品加载失败：${escapeHtml(e.message)}</div>
       <div style="text-align:center;margin-top:16px;"><button id="backBtn" class="btn">返回首页</button></div>`;
@@ -335,45 +338,45 @@ async function renderUserPage(userId){
   renderNovelList();
 }
 
-function renderNovelList(){
+function renderNovelList() {
   const list = document.getElementById('novelList');
-  if(!list) return;
+  if (!list) return;
   list.classList.toggle('delete-mode', state.deleteMode);
-  
+
   let novelsToRender = state.currentNovels;
   if (state.hideDeleted) {
     novelsToRender = novelsToRender.filter(n => !state.markedIds.has(String(n.id)));
   }
-  
+
   list.innerHTML = novelsToRender.map(novelItemHTML).join('');
 
   list.querySelectorAll('.novel-title').forEach(el => {
     el.addEventListener('click', () => {
-      if(state.deleteMode) return; // clicks are handled by the whole-card toggle below
+      if (state.deleteMode) return; // clicks are handled by the whole-card toggle below
       state.highlightNovelId = el.dataset.id;
       go(`#/novel/${encodeURIComponent(el.dataset.id)}/${encodeURIComponent(state.currentUserId)}`);
     });
   });
 
-  if(state.deleteMode){
+  if (state.deleteMode) {
     list.querySelectorAll('.novel-item').forEach(item => {
       item.addEventListener('click', e => {
         const cb = item.querySelector('.novel-checkbox');
-        if(!cb) return;
-        if(e.target !== cb) cb.checked = !cb.checked;
+        if (!cb) return;
+        if (e.target !== cb) cb.checked = !cb.checked;
         const id = cb.dataset.id;
-        if(cb.checked) state.pendingSelection.add(id);
+        if (cb.checked) state.pendingSelection.add(id);
         else state.pendingSelection.delete(id);
         updateSelectedCount();
       });
     });
   }
 
-  if(state.highlightNovelId){
+  if (state.highlightNovelId) {
     const targetId = state.highlightNovelId;
     state.highlightNovelId = null;
     const target = list.querySelector(`.novel-item[data-novel-id="${CSS.escape(targetId)}"]`);
-    if(target){
+    if (target) {
       requestAnimationFrame(() => {
         target.scrollIntoView({ block: 'center' });
         target.classList.add('highlight');
@@ -385,11 +388,11 @@ function renderNovelList(){
 
 // Strip HTML-tag-like fragments (e.g. literal "<br />" in description text).
 // No line-break substitution needed — just drop the tags.
-function stripTags(str){
+function stripTags(str) {
   return String(str).replace(/<[^>]*>/g, '');
 }
 
-function novelItemHTML(n){
+function novelItemHTML(n) {
   const id = String(n.id);
   const marked = state.markedIds.has(id);
   const checked = state.pendingSelection.has(id);
@@ -421,28 +424,28 @@ function novelItemHTML(n){
     </div>`;
 }
 
-function toggleDeleteMode(){
+function toggleDeleteMode() {
   state.deleteMode = !state.deleteMode;
   document.getElementById('deleteModeBtn').textContent = state.deleteMode ? '退出删除模式' : '删除模式';
   document.getElementById('deleteModeBtn').classList.toggle('active', state.deleteMode);
   document.getElementById('confirmBar').classList.toggle('hidden', !state.deleteMode);
-  if(state.deleteMode){
+  if (state.deleteMode) {
     state.pendingSelection = new Set(state.markedIds);
   }
   updateSelectedCount();
   renderNovelList();
 }
 
-function updateSelectedCount(){
+function updateSelectedCount() {
   const el = document.getElementById('selectedCount');
-  if(!el) return;
+  if (!el) return;
   const currentIds = new Set(state.currentNovels.map(n => String(n.id)));
   const countInThisUser = [...state.pendingSelection].filter(id => currentIds.has(id)).length;
   el.textContent = `已选择 ${countInThisUser} 篇`;
 }
 
-async function confirmDeleteSelection(){
-  if(!state.sb){
+async function confirmDeleteSelection() {
+  if (!state.sb) {
     alert('尚未配置 Supabase（config.json），无法保存删除标记。');
     return;
   }
@@ -453,7 +456,7 @@ async function confirmDeleteSelection(){
   const toAdd = [...after].filter(id => !before.has(id));
   const toRemove = [...before].filter(id => !after.has(id));
 
-  if(!toAdd.length && !toRemove.length){
+  if (!toAdd.length && !toRemove.length) {
     state.deleteMode = false;
     document.getElementById('deleteModeBtn').textContent = '删除模式';
     document.getElementById('deleteModeBtn').classList.remove('active');
@@ -464,24 +467,24 @@ async function confirmDeleteSelection(){
 
   confirmBtn.disabled = true;
   confirmBtn.textContent = '保存中…';
-  try{
-    if(toAdd.length){
+  try {
+    if (toAdd.length) {
       const rows = toAdd.map(id => {
         const novel = state.currentNovels.find(n => String(n.id) === id);
         return { novel_id: id, user_id: state.currentUserId, title: novel ? (novel.title || null) : null };
       });
       const { error } = await state.sb.from('deleted_novels').insert(rows);
-      if(error) throw error;
+      if (error) throw error;
     }
-    if(toRemove.length){
+    if (toRemove.length) {
       const { error } = await state.sb.from('deleted_novels').delete().in('novel_id', toRemove);
-      if(error) throw error;
+      if (error) throw error;
     }
     toAdd.forEach(id => state.markedIds.add(id));
     toRemove.forEach(id => state.markedIds.delete(id));
     state.deleteMode = false;
     renderUserPage(state.currentUserId);
-  }catch(e){
+  } catch (e) {
     alert('保存失败：' + e.message);
     confirmBtn.disabled = false;
     confirmBtn.textContent = '确定';
@@ -490,40 +493,40 @@ async function confirmDeleteSelection(){
 
 /* ---------------- novel page ---------------- */
 
-async function loadNovelText(novelId){
+async function loadNovelText(novelId) {
   const res = await fetch(`${NOVEL_BASE}/${encodeURIComponent(novelId)}.txt`);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.text();
 }
 
-function processNovelText(raw){
+function processNovelText(raw) {
   const idx = raw.indexOf(SPLIT_MARKER);
   let text = idx >= 0 ? raw.slice(idx + SPLIT_MARKER.length) : raw;
-  
+
   // 修改这里：全局替换掉所有的 [newpage]，然后再过滤掉可能产生的空行
   let lines = text.split(/\r?\n/)
     .map(l => l.replace(/\[newpage\]/g, ''))
-    // 如果不需要保留因为删掉标签而变成纯空格的行，可以加上下面这句过滤：
-    // .filter(l => l.trim() !== ''); 
-  
-  while(lines.length && lines[0].trim() === '') lines.shift();
-  while(lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  // 如果不需要保留因为删掉标签而变成纯空格的行，可以加上下面这句过滤：
+  // .filter(l => l.trim() !== ''); 
+
+  while (lines.length && lines[0].trim() === '') lines.shift();
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
   return lines.join('\n');
 }
 
-async function renderNovelPage(novelId, userId){
+async function renderNovelPage(novelId, userId) {
   const app = document.getElementById('app');
   app.innerHTML = `<div class="loading">正在展开卷轴…</div>`;
 
   let meta = null;
-  if(userId && state.currentUserId === userId){
+  if (userId && state.currentUserId === userId) {
     meta = state.currentNovels.find(n => String(n.id) === String(novelId));
   }
 
   let raw;
-  try{
+  try {
     raw = await loadNovelText(novelId);
-  }catch(e){
+  } catch (e) {
     app.innerHTML = `
       <div class="error">正文加载失败：${escapeHtml(e.message)}</div>
       <div style="text-align:center;margin-top:16px;"><button id="backBtn" class="btn">返回</button></div>`;
@@ -537,11 +540,27 @@ async function renderNovelPage(novelId, userId){
   const inSeries = meta && meta.seriesTitle;
 
   state.highlightNovelId = String(novelId);
+  state.showTranslation = false;
+
+  // 切换小说时释放之前缓存的译文
+  if (!state.translationCache[novelId]) {
+    if (state.translationController) {
+      state.translationController.abort();
+      state.translationController = null;
+    }
+    state.translationCache = {};
+  }
+
+  let translateBtnText = '翻译';
+  if (state.translationCache[novelId]) {
+    translateBtnText = state.translationController ? '翻译中...' : '看译文';
+  }
 
   app.innerHTML = `
     <header class="topbar">
       <button id="backBtn" class="btn-icon">← 返回</button>
       <h1>${escapeHtml(meta ? (meta.title || '（无标题）') : ('作品 ' + novelId))}</h1>
+      <button id="translateBtn" class="btn">${translateBtnText}</button>
       <button id="mobileBtn" class="btn">手机模式</button>
     </header>
     <div class="novel-content" id="novelContent">${escapeHtml(processed)}</div>
@@ -555,14 +574,115 @@ async function renderNovelPage(novelId, userId){
     document.getElementById('mobileBtn').textContent = active ? '还原字号' : '手机模式';
   };
 
-  if(allNovels.length){
+  const translateBtn = document.getElementById('translateBtn');
+  translateBtn.onclick = () => {
+    if (state.translationCache[novelId] && !state.translationController) {
+      state.showTranslation = !state.showTranslation;
+      translateBtn.textContent = state.showTranslation ? '看原文' : '看译文';
+      document.getElementById('novelContent').innerHTML = escapeHtml(state.showTranslation ? state.translationCache[novelId] : processed);
+    } else if (!state.translationController) {
+      let apiKey = localStorage.getItem('deepseek_key');
+      if (!apiKey) {
+        apiKey = prompt('请输入 DeepSeek API Key (只需输入一次，保存在本地):');
+        if (!apiKey) return;
+        localStorage.setItem('deepseek_key', apiKey);
+      }
+      state.showTranslation = true;
+      state.translationCache[novelId] = '正在请求翻译...';
+      document.getElementById('novelContent').innerHTML = escapeHtml(state.translationCache[novelId]);
+      translateBtn.textContent = '翻译中...';
+      startTranslation(novelId, processed, apiKey);
+    }
+  };
+
+  if (allNovels.length) {
     setupNovelDirectory(novelId, userId, inSeries, meta, allNovels);
   }
-  
+
   startFabHideTimer();
 }
 
-function novelDirectoryHTML(meta, inSeries){
+async function startTranslation(novelId, text, apiKey) {
+  if (state.translationController) {
+    state.translationController.abort();
+  }
+  state.translationController = new AbortController();
+
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      signal: state.translationController.signal,
+      body: JSON.stringify({
+        model: 'deepseek-v4-flash',
+        messages: [
+          { role: 'system', content: '你是一个专业的小说翻译官，请将以下内容翻译为流畅的现代中文。如果原文已经是中文，请进行适当的润色和排版优化。' },
+          { role: 'user', content: text }
+        ],
+        stream: true
+      })
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem('deepseek_key');
+        throw new Error('API Key 无效或已过期，请刷新页面重新输入');
+      }
+      throw new Error('API请求失败: ' + res.status);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let done = false;
+    let currentCache = '';
+    let buffer = '';
+
+    while (!done) {
+      const { value, done: readerDone } = await reader.read();
+      done = readerDone;
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIdx;
+        while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newlineIdx).trim();
+          buffer = buffer.slice(newlineIdx + 1);
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices && data.choices[0].delta.content) {
+                currentCache += data.choices[0].delta.content;
+                state.translationCache[novelId] = currentCache;
+                if (state.highlightNovelId === String(novelId) && state.showTranslation) {
+                  const contentEl = document.getElementById('novelContent');
+                  if (contentEl) {
+                    contentEl.innerHTML = escapeHtml(currentCache);
+                  }
+                }
+              }
+            } catch (e) { }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    alert('翻译出错: ' + err.message);
+    delete state.translationCache[novelId];
+  } finally {
+    if (state.translationController && !state.translationController.signal.aborted) {
+      state.translationController = null;
+    }
+    const transBtn = document.getElementById('translateBtn');
+    if (transBtn && state.highlightNovelId === String(novelId)) {
+      transBtn.textContent = state.showTranslation ? '看原文' : '看译文';
+    }
+  }
+}
+
+function novelDirectoryHTML(meta, inSeries) {
   return `
     <button id="seriesFab" class="fab">作品目录</button>
     <div id="seriesPanel" class="series-panel hidden">
@@ -574,12 +694,12 @@ function novelDirectoryHTML(meta, inSeries){
     </div>`;
 }
 
-function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
+function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels) {
   const fab = document.getElementById('seriesFab');
   const panel = document.getElementById('seriesPanel');
   const listContainer = document.getElementById('directoryList');
   const toggleBtn = document.getElementById('toggleSeriesBtn');
-  
+
   let showOnlySeries = false;
 
   function renderList() {
@@ -589,10 +709,10 @@ function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
         .filter(n => n.seriesTitle === meta.seriesTitle)
         .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
     }
-    
+
     listContainer.innerHTML = list.map(n => {
       const isCurrent = String(n.id) === String(novelId);
-      const prefix = (showOnlySeries && inSeries && n.seriesOrder !== null && n.seriesOrder !== undefined) 
+      const prefix = (showOnlySeries && inSeries && n.seriesOrder !== null && n.seriesOrder !== undefined)
         ? `<span class="series-panel-order">第${escapeHtml(String(n.seriesOrder))}篇</span>`
         : '';
       return `
@@ -601,11 +721,11 @@ function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
           <span>${escapeHtml(n.title || '（无标题）')}</span>
         </div>`;
     }).join('');
-    
+
     listContainer.querySelectorAll('.series-panel-item').forEach(item => {
       item.addEventListener('click', () => {
         const targetId = item.dataset.id;
-        if(String(targetId) === String(novelId)) { panel.classList.add('hidden'); return; }
+        if (String(targetId) === String(novelId)) { panel.classList.add('hidden'); return; }
         go(`#/novel/${encodeURIComponent(targetId)}/${encodeURIComponent(userId)}`);
       });
     });
@@ -615,7 +735,7 @@ function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
 
   if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
-      if(!inSeries) return;
+      if (!inSeries) return;
       showOnlySeries = !showOnlySeries;
       toggleBtn.classList.toggle('primary', showOnlySeries);
       renderList();
@@ -623,12 +743,12 @@ function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
   }
 
   fab.addEventListener('click', () => panel.classList.toggle('hidden'));
-  
+
   fab.addEventListener('mouseenter', () => {
     fab.classList.remove('hide-side');
     clearTimeout(fabHideTimeout);
   });
-  
+
   fab.addEventListener('mouseleave', () => {
     startFabHideTimer();
   });
@@ -636,7 +756,7 @@ function setupNovelDirectory(novelId, userId, inSeries, meta, allNovels){
 
 /* ---------------- utils ---------------- */
 
-function escapeHtml(str){
+function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
