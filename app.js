@@ -28,6 +28,7 @@ const state = {
   highlightNovelId: null,  // set right before leaving to a novel page, consumed once back on the user page
   translationCache: {},
   showTranslation: false,
+  showOriginal: true,
   translationController: null,
 };
 
@@ -540,7 +541,6 @@ async function renderNovelPage(novelId, userId) {
   const inSeries = meta && meta.seriesTitle;
 
   state.highlightNovelId = String(novelId);
-  state.showTranslation = false;
 
   // 切换小说时释放之前缓存的译文
   if (!state.translationCache[novelId]) {
@@ -549,21 +549,31 @@ async function renderNovelPage(novelId, userId) {
       state.translationController = null;
     }
     state.translationCache = {};
+    state.showOriginal = true;
+    state.showTranslation = false;
   }
 
   let translateBtnText = '翻译';
   if (state.translationCache[novelId]) {
-    translateBtnText = state.translationController ? '翻译中...' : '看译文';
+    translateBtnText = state.translationController ? '翻译中...' : '重新翻译';
   }
 
   app.innerHTML = `
     <header class="topbar">
       <button id="backBtn" class="btn-icon">← 返回</button>
       <h1>${escapeHtml(meta ? (meta.title || '（无标题）') : ('作品 ' + novelId))}</h1>
-      <button id="translateBtn" class="btn">${translateBtnText}</button>
+      <div class="trans-controls" style="display:flex; align-items:center; gap: 12px; margin-left: 8px;">
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size: 0.85rem; color: var(--ink-dim);">
+          <input type="checkbox" id="cbShowOrig" ${state.showOriginal ? 'checked' : ''}> 原文
+        </label>
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size: 0.85rem; color: var(--ink-dim);">
+          <input type="checkbox" id="cbShowTrans" ${state.showTranslation ? 'checked' : ''}> 译文
+        </label>
+        <button id="translateBtn" class="btn">${translateBtnText}</button>
+      </div>
       <button id="mobileBtn" class="btn">手机模式</button>
     </header>
-    <div class="novel-content" id="novelContent">${escapeHtml(processed)}</div>
+    <div class="novel-content" id="novelContent"></div>
     ${allNovels.length ? novelDirectoryHTML(meta, inSeries) : ''}
   `;
 
@@ -574,13 +584,30 @@ async function renderNovelPage(novelId, userId) {
     document.getElementById('mobileBtn').textContent = active ? '还原字号' : '手机模式';
   };
 
+  const cbShowOrig = document.getElementById('cbShowOrig');
+  const cbShowTrans = document.getElementById('cbShowTrans');
+
+  function updateContent() {
+    const contentEl = document.getElementById('novelContent');
+    if (!contentEl) return;
+    const transText = state.translationCache[novelId] || '';
+    contentEl.innerHTML = renderInterleaved(processed, transText, state.showOriginal, state.showTranslation);
+  }
+
+  cbShowOrig.onchange = () => {
+    state.showOriginal = cbShowOrig.checked;
+    updateContent();
+  };
+  cbShowTrans.onchange = () => {
+    state.showTranslation = cbShowTrans.checked;
+    updateContent();
+  };
+
+  updateContent();
+
   const translateBtn = document.getElementById('translateBtn');
   translateBtn.onclick = () => {
-    if (state.translationCache[novelId] && !state.translationController) {
-      state.showTranslation = !state.showTranslation;
-      translateBtn.textContent = state.showTranslation ? '看原文' : '看译文';
-      document.getElementById('novelContent').innerHTML = escapeHtml(state.showTranslation ? state.translationCache[novelId] : processed);
-    } else if (!state.translationController) {
+    if (!state.translationController) {
       let apiKey = localStorage.getItem('deepseek_key');
       if (!apiKey) {
         apiKey = prompt('请输入 DeepSeek API Key (只需输入一次，保存在本地):');
@@ -588,8 +615,9 @@ async function renderNovelPage(novelId, userId) {
         localStorage.setItem('deepseek_key', apiKey);
       }
       state.showTranslation = true;
-      state.translationCache[novelId] = '正在请求翻译...';
-      document.getElementById('novelContent').innerHTML = escapeHtml(state.translationCache[novelId]);
+      cbShowTrans.checked = true;
+      state.translationCache[novelId] = '';
+      updateContent();
       translateBtn.textContent = '翻译中...';
       startTranslation(novelId, processed, apiKey);
     }
@@ -602,12 +630,31 @@ async function renderNovelPage(novelId, userId) {
   startFabHideTimer();
 }
 
+function renderInterleaved(origText, transText, showOrig, showTrans) {
+  if (!showOrig && !showTrans) return '';
+  const origParas = origText.split(/\n+/).filter(p => p.trim() !== '');
+  const transParas = transText ? transText.split(/\n+/).filter(p => p.trim() !== '') : [];
+  
+  let html = '';
+  const maxParas = Math.max(showOrig ? origParas.length : 0, showTrans ? transParas.length : 0);
+  
+  for (let i = 0; i < maxParas; i++) {
+    if (showOrig && i < origParas.length) {
+      html += `<div class="para-orig" style="margin-bottom: ${showTrans ? '0.4em' : '1em'};">${escapeHtml(origParas[i])}</div>`;
+    }
+    if (showTrans && i < transParas.length) {
+      html += `<div class="para-trans" style="margin-bottom: 1em; color: var(--teal);">${escapeHtml(transParas[i])}</div>`;
+    }
+  }
+  return html;
+}
+
 async function startTranslation(novelId, text, apiKey) {
   if (state.translationController) {
     state.translationController.abort();
   }
   state.translationController = new AbortController();
-
+  
   try {
     const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
@@ -617,7 +664,7 @@ async function startTranslation(novelId, text, apiKey) {
       },
       signal: state.translationController.signal,
       body: JSON.stringify({
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-chat',
         messages: [
           { role: 'system', content: '你是一个专业的小说翻译官，请将以下内容翻译为流畅的现代中文。如果原文已经是中文，请进行适当的润色和排版优化。' },
           { role: 'user', content: text }
@@ -639,6 +686,7 @@ async function startTranslation(novelId, text, apiKey) {
     let done = false;
     let currentCache = '';
     let buffer = '';
+    let lastUpdate = 0;
 
     while (!done) {
       const { value, done: readerDone } = await reader.read();
@@ -646,6 +694,7 @@ async function startTranslation(novelId, text, apiKey) {
       if (value) {
         buffer += decoder.decode(value, { stream: true });
         let newlineIdx;
+        let changed = false;
         while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
           const line = buffer.slice(0, newlineIdx).trim();
           buffer = buffer.slice(newlineIdx + 1);
@@ -654,17 +703,29 @@ async function startTranslation(novelId, text, apiKey) {
               const data = JSON.parse(line.slice(6));
               if (data.choices && data.choices[0].delta.content) {
                 currentCache += data.choices[0].delta.content;
-                state.translationCache[novelId] = currentCache;
-                if (state.highlightNovelId === String(novelId) && state.showTranslation) {
-                  const contentEl = document.getElementById('novelContent');
-                  if (contentEl) {
-                    contentEl.innerHTML = escapeHtml(currentCache);
-                  }
-                }
+                changed = true;
               }
             } catch (e) { }
           }
         }
+        if (changed) {
+          state.translationCache[novelId] = currentCache;
+          if (state.highlightNovelId === String(novelId) && Date.now() - lastUpdate > 100) {
+            const contentEl = document.getElementById('novelContent');
+            if (contentEl) {
+               contentEl.innerHTML = renderInterleaved(text, currentCache, state.showOriginal, state.showTranslation);
+            }
+            lastUpdate = Date.now();
+          }
+        }
+      }
+    }
+    
+    // Final update
+    if (state.highlightNovelId === String(novelId)) {
+      const contentEl = document.getElementById('novelContent');
+      if (contentEl) {
+         contentEl.innerHTML = renderInterleaved(text, currentCache, state.showOriginal, state.showTranslation);
       }
     }
   } catch (err) {
@@ -677,7 +738,7 @@ async function startTranslation(novelId, text, apiKey) {
     }
     const transBtn = document.getElementById('translateBtn');
     if (transBtn && state.highlightNovelId === String(novelId)) {
-      transBtn.textContent = state.showTranslation ? '看原文' : '看译文';
+      transBtn.textContent = '重新翻译';
     }
   }
 }
