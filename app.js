@@ -664,7 +664,7 @@ async function startTranslation(novelId, text, apiKey) {
       },
       signal: state.translationController.signal,
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [
           { role: 'system', content: '你是一个专业的小说翻译官，请将以下内容翻译为流畅的现代中文。如果原文已经是中文，请进行适当的润色和排版优化。' },
           { role: 'user', content: text }
