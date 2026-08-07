@@ -669,7 +669,10 @@ async function startTranslation(novelId, text, apiKey) {
           { role: 'system', content: '你是一个专业的小说翻译官，请将以下内容翻译为流畅的现代中文。注意必须逐段翻译，保持原文段落数完全一致。' },
           { role: 'user', content: text }
         ],
-        stream: true
+        stream: true,
+      {"thinking": {"type": "enabled"}},
+      {"reasoning_effort": "low"},
+      reasoning_max_tokens: 2048
       })
     });
 
