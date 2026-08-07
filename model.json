@@ -1,0 +1,25 @@
+[
+  {
+    "name": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "model_name": [
+      "deepseek-v4-flash",
+      "deepseek-v4-pro"
+    ],
+    "extra_body": {
+      "reasoning_effort": "none"
+    }
+  },
+{
+    "name": "gemini",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "model_name": [
+      "gemini-3.5-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite"
+    ],
+    "extra_body": {
+      "reasoning_effort": "low"
+    }
+  }
+]

@@ -30,6 +30,10 @@ const state = {
   showTranslation: false,
   showOriginal: true,
   translationController: null,
+  models: [],
+  currentModelKey: null,
+  glossary: '',
+  useStream: true,
 };
 
 /* ---------------- bootstrap ---------------- */
@@ -39,6 +43,8 @@ window.addEventListener('hashchange', route);
 
 async function init() {
   await loadConfig();
+  await loadModels();
+  await loadGlossary();
   initSupabase();
   try {
     await loadUsers();
@@ -72,6 +78,32 @@ async function loadConfig() {
     if (res.ok) state.config = await res.json();
   } catch (e) {
     state.config = null;
+  }
+}
+
+async function loadModels() {
+  try {
+    const res = await fetch('./model.json', { cache: 'no-store' });
+    if (res.ok) {
+      state.models = await res.json();
+    } else {
+      state.models = [];
+    }
+  } catch (e) {
+    state.models = [];
+  }
+}
+
+async function loadGlossary() {
+  try {
+    const res = await fetch('./名词表.csv', { cache: 'no-store' });
+    if (res.ok) {
+      state.glossary = await res.text();
+    } else {
+      state.glossary = '';
+    }
+  } catch (e) {
+    state.glossary = '';
   }
 }
 
@@ -549,12 +581,43 @@ async function renderNovelPage(novelId, userId) {
       state.translationController = null;
     }
     state.translationCache = {};
+    state.translationCache[novelId] = {};
     state.showOriginal = true;
     state.showTranslation = false;
   }
 
+  let selectHtml = '';
+  if (state.models && state.models.length > 0) {
+    let options = [];
+    state.models.forEach((provider, pIdx) => {
+      if (Array.isArray(provider.model_name)) {
+        provider.model_name.forEach(mName => {
+          const key = `${pIdx}::${mName}`;
+          options.push(`<option value="${key}">${provider.name} (${mName})</option>`);
+        });
+      }
+    });
+    if (!state.currentModelKey && options.length > 0) {
+      const match = options[0].match(/value="([^"]+)"/);
+      if (match) state.currentModelKey = match[1];
+    }
+    options = options.map(opt => {
+      const match = opt.match(/value="([^"]+)"/);
+      if (match && match[1] === state.currentModelKey) {
+        return opt.replace('<option', '<option selected');
+      }
+      return opt;
+    });
+    selectHtml = `<select id="modelSelect" class="btn" style="padding: 4px 8px; font-size: 0.8rem; background: var(--bg-panel); color: var(--ink-dim); border: 1px solid var(--line); border-radius: 4px;">${options.join('')}</select>`;
+  }
+
+  const streamHtml = `<label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size: 0.85rem; color: var(--ink-dim);">
+    <input type="checkbox" id="cbStream" ${state.useStream ? 'checked' : ''}> 流式输出
+  </label>`;
+
+  let transTextForModel = state.translationCache[novelId][state.currentModelKey];
   let translateBtnText = '翻译';
-  if (state.translationCache[novelId]) {
+  if (transTextForModel) {
     translateBtnText = state.translationController ? '翻译中...' : '重新翻译';
   }
 
@@ -569,6 +632,8 @@ async function renderNovelPage(novelId, userId) {
         <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size: 0.85rem; color: var(--ink-dim);">
           <input type="checkbox" id="cbShowTrans" ${state.showTranslation ? 'checked' : ''}> 译文
         </label>
+        ${selectHtml}
+        ${streamHtml}
         <button id="translateBtn" class="btn">${translateBtnText}</button>
       </div>
       <button id="mobileBtn" class="btn">手机模式</button>
@@ -586,12 +651,19 @@ async function renderNovelPage(novelId, userId) {
 
   const cbShowOrig = document.getElementById('cbShowOrig');
   const cbShowTrans = document.getElementById('cbShowTrans');
+  const cbStream = document.getElementById('cbStream');
+  const modelSelect = document.getElementById('modelSelect');
+  const translateBtn = document.getElementById('translateBtn');
 
   function updateContent() {
     const contentEl = document.getElementById('novelContent');
     if (!contentEl) return;
-    const transText = state.translationCache[novelId] || '';
+    const transText = state.currentModelKey ? (state.translationCache[novelId][state.currentModelKey] || '') : '';
     contentEl.innerHTML = renderInterleaved(processed, transText, state.showOriginal, state.showTranslation);
+    if (pinnedAnnotation && !document.body.contains(pinnedAnnotation)) {
+      pinnedAnnotation = null;
+      hideTooltip();
+    }
   }
 
   cbShowOrig.onchange = () => {
@@ -602,24 +674,48 @@ async function renderNovelPage(novelId, userId) {
     state.showTranslation = cbShowTrans.checked;
     updateContent();
   };
+  if (cbStream) {
+    cbStream.onchange = () => {
+      state.useStream = cbStream.checked;
+    };
+  }
+  if (modelSelect) {
+    modelSelect.onchange = () => {
+      state.currentModelKey = modelSelect.value;
+      const transText = state.translationCache[novelId][state.currentModelKey];
+      if (transText) {
+        translateBtn.textContent = state.translationController ? '翻译中...' : '重新翻译';
+      } else {
+        translateBtn.textContent = '翻译';
+      }
+      updateContent();
+    };
+  }
 
   updateContent();
 
-  const translateBtn = document.getElementById('translateBtn');
   translateBtn.onclick = () => {
     if (!state.translationController) {
-      let apiKey = localStorage.getItem('deepseek_key');
-      if (!apiKey) {
-        apiKey = prompt('请输入 DeepSeek API Key (只需输入一次，保存在本地):');
-        if (!apiKey) return;
-        localStorage.setItem('deepseek_key', apiKey);
+      if (!state.currentModelKey) {
+        alert('没有配置任何模型，请检查 model.json');
+        return;
       }
+      const [pIdx, mName] = state.currentModelKey.split('::');
+      const provider = state.models[pIdx];
+
+      let apiKey = localStorage.getItem(`${provider.name}_key`);
+      if (!apiKey) {
+        apiKey = prompt(`请输入 ${provider.name} API Key (只需输入一次，保存在本地):`);
+        if (!apiKey) return;
+        localStorage.setItem(`${provider.name}_key`, apiKey);
+      }
+
       state.showTranslation = true;
       cbShowTrans.checked = true;
-      state.translationCache[novelId] = '';
+      state.translationCache[novelId][state.currentModelKey] = '';
       updateContent();
       translateBtn.textContent = '翻译中...';
-      startTranslation(novelId, processed, apiKey);
+      startTranslation(novelId, processed, apiKey, provider, mName);
     }
   };
 
@@ -634,54 +730,86 @@ function renderInterleaved(origText, transText, showOrig, showTrans) {
   if (!showOrig && !showTrans) return '';
   const origParas = origText.split(/\n+/).filter(p => p.trim() !== '');
   const transParas = transText ? transText.split(/\n+/).filter(p => p.trim() !== '') : [];
-  
+
   let html = '';
   const maxParas = Math.max(showOrig ? origParas.length : 0, showTrans ? transParas.length : 0);
-  
+
   for (let i = 0; i < maxParas; i++) {
     if (showOrig && i < origParas.length) {
       html += `<div class="para-orig" style="margin-bottom: ${showTrans ? '0.4em' : '1em'};">${escapeHtml(origParas[i])}</div>`;
     }
     if (showTrans && i < transParas.length) {
-      html += `<div class="para-trans" style="margin-bottom: 1em; color: var(--teal);">${escapeHtml(transParas[i])}</div>`;
+      let safeTrans = escapeHtml(transParas[i]);
+      safeTrans = safeTrans.replace(/\{#([^|]+)\|(.*?)#\}/g, (match, term, note) => {
+        return `<span class="annotation" data-note="${note}">${term}</span>`;
+      });
+      html += `<div class="para-trans" style="margin-bottom: 1em; color: var(--teal);">${safeTrans}</div>`;
     }
   }
   return html;
 }
 
-async function startTranslation(novelId, text, apiKey) {
+async function startTranslation(novelId, text, apiKey, provider, mName) {
   if (state.translationController) {
     state.translationController.abort();
   }
   state.translationController = new AbortController();
-  
+
   try {
-    const res = await fetch('https://api.deepseek.com/chat/completions', {
+    let systemPrompt = '你是一个专业的小说翻译官，请将以下内容翻译为流畅的现代中文。【注释格式】所有需要注释的名词，**必须且只能**使用以下格式：{#名词|注释内容#}，示例：{#克苏鲁|美国小说家洛夫克拉夫特创造的神话体系中的邪神#}。【需要注释的名词判定标准】必须注释以下几类词：1. 国内不常见的动植物名2. 国内不常见的外国点心/零食/习俗名3. 需要文化背景才能理解的游戏名称（例如 "ポッキーゲーム" }）4. 日语谐音梗或冷笑话（用罗马音解释）。东方Project相关设定（人物名、人物关系）不需要注释。【严格排版要求】1. 必须逐段翻译，保持原文段落数完全一致。2. 同一行内的多句对话或打断发言，必须翻译在【同一行】内，严禁自行拆分换行。3. 空行原样保留，不合并不删减。';
+    if (state.glossary) {
+      systemPrompt += '\n\n【专有名词表】\n请严格参照以下名词表进行翻译（格式：名词,翻译,说明）：\n' + state.glossary;
+    }
+
+    let reqBody = {
+      model: mName,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text }
+      ],
+      stream: state.useStream
+    };
+
+    if (provider.extra_body) {
+      Object.assign(reqBody, provider.extra_body);
+    }
+
+
+    const endpoint = provider.base_url.endsWith('/chat/completions')
+      ? provider.base_url
+      : provider.base_url.replace(/\/+$/, '') + '/chat/completions';
+
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       signal: state.translationController.signal,
-      body: JSON.stringify({
-        model: 'deepseek-v4-flash',
-        messages: [
-          { role: 'system', content: '你是一个专业的小说翻译官，请将以下内容翻译为流畅的现代中文。注意必须逐段翻译，保持原文段落数完全一致。' },
-          { role: 'user', content: text }
-        ],
-        stream: true,
-       "thinking": {"type": "enabled"},
-       "reasoning_effort": "low",
-       reasoning_max_tokens: 2048
-      })
+      body: JSON.stringify(reqBody)
     });
 
     if (!res.ok) {
       if (res.status === 401) {
-        localStorage.removeItem('deepseek_key');
-        throw new Error('API Key 无效或已过期，请刷新页面重新输入');
+        localStorage.removeItem(`${provider.name}_key`);
+        throw new Error(`${provider.name} API Key 无效或已过期，请刷新页面重新输入`);
       }
       throw new Error('API请求失败: ' + res.status);
+    }
+
+    if (!state.useStream) {
+      const data = await res.json();
+      if (data.choices && data.choices[0]?.message?.content) {
+        const translatedContent = data.choices[0].message.content;
+        state.translationCache[novelId][state.currentModelKey] = translatedContent;
+        if (state.highlightNovelId === String(novelId)) {
+          const contentEl = document.getElementById('novelContent');
+          if (contentEl) {
+            contentEl.innerHTML = renderInterleaved(text, translatedContent, state.showOriginal, state.showTranslation);
+          }
+        }
+      }
+      return;
     }
 
     const reader = res.body.getReader();
@@ -691,50 +819,72 @@ async function startTranslation(novelId, text, apiKey) {
     let buffer = '';
     let lastUpdate = 0;
 
+    // 提取解析 chunk 的通用工具函数
+    const parseLines = (textChunk) => {
+      let changed = false;
+      const lines = textChunk.split(/\r?\n/);
+      for (let line of lines) {
+        line = line.trim();
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.choices && data.choices[0]?.delta?.content) {
+              currentCache += data.choices[0].delta.content;
+              changed = true;
+            }
+          } catch (e) {
+            // 忽略非标准或未传输完整的 JSON 碎片
+          }
+        }
+      }
+      return changed;
+    };
+
     while (!done) {
       const { value, done: readerDone } = await reader.read();
       done = readerDone;
       if (value) {
         buffer += decoder.decode(value, { stream: true });
-        let newlineIdx;
-        let changed = false;
-        while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, newlineIdx).trim();
-          buffer = buffer.slice(newlineIdx + 1);
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.choices && data.choices[0].delta.content) {
-                currentCache += data.choices[0].delta.content;
-                changed = true;
+
+        // 按行分割，保留最后一行可能没传输完的“半截数据”在 buffer 中
+        const lastNewlineIdx = buffer.lastIndexOf('\n');
+        if (lastNewlineIdx >= 0) {
+          const completeChunk = buffer.slice(0, lastNewlineIdx);
+          buffer = buffer.slice(lastNewlineIdx + 1);
+
+          if (parseLines(completeChunk)) {
+            state.translationCache[novelId][state.currentModelKey] = currentCache;
+            if (state.highlightNovelId === String(novelId) && Date.now() - lastUpdate > 100) {
+              const contentEl = document.getElementById('novelContent');
+              if (contentEl) {
+                contentEl.innerHTML = renderInterleaved(text, currentCache, state.showOriginal, state.showTranslation);
               }
-            } catch (e) { }
-          }
-        }
-        if (changed) {
-          state.translationCache[novelId] = currentCache;
-          if (state.highlightNovelId === String(novelId) && Date.now() - lastUpdate > 100) {
-            const contentEl = document.getElementById('novelContent');
-            if (contentEl) {
-               contentEl.innerHTML = renderInterleaved(text, currentCache, state.showOriginal, state.showTranslation);
+              lastUpdate = Date.now();
             }
-            lastUpdate = Date.now();
           }
         }
       }
     }
-    
-    // Final update
+
+    // 【关键修复】处理流完全结束时 buffer 里残余的最后一部分数据
+    if (buffer.trim()) {
+      if (parseLines(buffer)) {
+        state.translationCache[novelId][state.currentModelKey] = currentCache;
+      }
+    }
+
+    // 最终完整渲染一次
     if (state.highlightNovelId === String(novelId)) {
       const contentEl = document.getElementById('novelContent');
       if (contentEl) {
-         contentEl.innerHTML = renderInterleaved(text, currentCache, state.showOriginal, state.showTranslation);
+        contentEl.innerHTML = renderInterleaved(text, currentCache, state.showOriginal, state.showTranslation);
       }
     }
+
   } catch (err) {
     if (err.name === 'AbortError') return;
     alert('翻译出错: ' + err.message);
-    delete state.translationCache[novelId];
+    delete state.translationCache[novelId][state.currentModelKey];
   } finally {
     if (state.translationController && !state.translationController.signal.aborted) {
       state.translationController = null;
@@ -825,3 +975,70 @@ function escapeHtml(str) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
+
+/* ---------- annotation tooltips ---------- */
+let pinnedAnnotation = null;
+
+function ensureTooltip() {
+  let tooltip = document.getElementById('global-tooltip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.id = 'global-tooltip';
+    document.body.appendChild(tooltip);
+  }
+  return tooltip;
+}
+
+function showTooltip(el) {
+  const tooltip = ensureTooltip();
+  tooltip.textContent = el.dataset.note;
+  const rect = el.getBoundingClientRect();
+  tooltip.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
+  tooltip.style.top = `${rect.top + window.scrollY - tooltip.offsetHeight - 8}px`;
+  tooltip.classList.add('visible');
+}
+
+function hideTooltip() {
+  const tooltip = document.getElementById('global-tooltip');
+  if (tooltip) tooltip.classList.remove('visible');
+}
+
+document.addEventListener('mouseover', (e) => {
+  if (pinnedAnnotation) return;
+  const target = e.target.closest('.annotation');
+  if (target) {
+    showTooltip(target);
+  }
+});
+
+document.addEventListener('mouseout', (e) => {
+  if (pinnedAnnotation) return;
+  const target = e.target.closest('.annotation');
+  if (target) {
+    hideTooltip();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  const target = e.target.closest('.annotation');
+  if (target) {
+    if (pinnedAnnotation === target) {
+      pinnedAnnotation = null;
+      hideTooltip();
+    } else {
+      pinnedAnnotation = target;
+      showTooltip(target);
+    }
+  } else {
+    if (pinnedAnnotation) {
+      pinnedAnnotation = null;
+      hideTooltip();
+    }
+  }
+});
+
+document.addEventListener('scroll', () => {
+  if (pinnedAnnotation && document.body.contains(pinnedAnnotation)) {
+    showTooltip(pinnedAnnotation);
+  }
+}, { passive: true });

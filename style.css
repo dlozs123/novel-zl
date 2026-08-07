@@ -401,6 +401,39 @@ body{
   flex-shrink: 0;
 }
 
+/* ---------- annotation tooltips ---------- */
+.annotation {
+  color: #3b82f6;
+  cursor: pointer;
+  position: relative;
+  border-bottom: 1px dashed #3b82f6;
+  padding-bottom: 1px;
+}
+
+#global-tooltip {
+  position: absolute;
+  background: var(--ink);
+  color: #fffdf7;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+  z-index: 100;
+  max-width: 280px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px) translateX(-50%);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  font-family: var(--sans);
+  word-break: break-word;
+}
+
+#global-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0) translateX(-50%);
+}
+
 @media (max-width: 600px){
   .topbar h1{ font-size: 1.15rem; }
   .grid{ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
