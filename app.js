@@ -670,8 +670,8 @@ async function startTranslation(novelId, text, apiKey) {
           { role: 'user', content: text }
         ],
         stream: true,
-      {"thinking": {"type": "enabled"}},
-      {"reasoning_effort": "low"},
+      "thinking": {"type": "enabled"},
+      "reasoning_effort": "low",
       reasoning_max_tokens: 2048
       })
     });
